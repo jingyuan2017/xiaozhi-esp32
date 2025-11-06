@@ -205,6 +205,10 @@ void LvglDisplay::UpdateStatusBar(bool update_all) {
 void LvglDisplay::SetPreviewImage(std::unique_ptr<LvglImage> image) {
 }
 
+void LvglDisplay::ShowCharacter(const std::string& character) {
+    // Default implementation does nothing
+}
+
 void LvglDisplay::SetPowerSaveMode(bool on) {
     if (on) {
         SetChatMessage("system", "");

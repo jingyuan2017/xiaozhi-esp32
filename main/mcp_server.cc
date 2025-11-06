@@ -77,6 +77,21 @@ void McpServer::AddCommonTools() {
             });
     }
 
+    AddTool("self.screen.show_character",
+        "Display a character or word on the screen. Use this tool when user asks how to write a specific Chinese character or English word.",
+        PropertyList({
+            Property("character", kPropertyTypeString)
+        }),
+        [&board](const PropertyList& properties) -> ReturnValue {
+            auto character = properties["character"].value<std::string>();
+            ESP_LOGI(TAG, "Show character: %s", character.c_str());
+            auto display = board.GetDisplay();
+            if (display != nullptr) {
+                display->ShowCharacter(character);
+            }
+            return true;
+        });
+
 #ifdef HAVE_LVGL
     auto display = board.GetDisplay();
     if (display && display->GetTheme() != nullptr) {

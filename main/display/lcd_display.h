@@ -32,6 +32,11 @@ protected:
     lv_obj_t* chat_message_label_ = nullptr;
     esp_timer_handle_t preview_timer_ = nullptr;
     std::unique_ptr<LvglImage> preview_image_cached_ = nullptr;
+    
+    // Character display overlay
+    lv_obj_t* character_overlay_ = nullptr;
+    lv_obj_t* character_label_ = nullptr;
+    esp_timer_handle_t character_timer_ = nullptr;
 
     void InitializeLcdThemes();
     void SetupUI();
@@ -47,6 +52,7 @@ public:
     virtual void SetEmotion(const char* emotion) override;
     virtual void SetChatMessage(const char* role, const char* content) override; 
     virtual void SetPreviewImage(std::unique_ptr<LvglImage> image) override;
+    virtual void ShowCharacter(const std::string& character) override;
 
     // Add theme switching function
     virtual void SetTheme(Theme* theme) override;

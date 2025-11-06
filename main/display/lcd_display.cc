@@ -19,12 +19,13 @@
 
 LV_FONT_DECLARE(BUILTIN_TEXT_FONT);
 LV_FONT_DECLARE(BUILTIN_ICON_FONT);
-LV_FONT_DECLARE(font_awesome_30_4);
+LV_FONT_DECLARE(font_awesome_20_4);
+LV_FONT_DECLARE(font_puhui_20_4);  // 20号汉字字体，包含7404个常用汉字
 
 void LcdDisplay::InitializeLcdThemes() {
     auto text_font = std::make_shared<LvglBuiltInFont>(&BUILTIN_TEXT_FONT);
     auto icon_font = std::make_shared<LvglBuiltInFont>(&BUILTIN_ICON_FONT);
-    auto large_icon_font = std::make_shared<LvglBuiltInFont>(&font_awesome_30_4);
+    auto large_icon_font = std::make_shared<LvglBuiltInFont>(&font_awesome_20_4);
 
     // light theme
     auto light_theme = new LvglTheme("light");
@@ -86,6 +87,22 @@ LcdDisplay::LcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_
         .skip_unhandled_events = false,
     };
     esp_timer_create(&preview_timer_args, &preview_timer_);
+
+    // Create a timer to hide the character overlay
+    esp_timer_create_args_t character_timer_args = {
+        .callback = [](void* arg) {
+            LcdDisplay* display = static_cast<LcdDisplay*>(arg);
+            DisplayLockGuard lock(display);
+            if (display->character_overlay_ != nullptr) {
+                lv_obj_add_flag(display->character_overlay_, LV_OBJ_FLAG_HIDDEN);
+            }
+        },
+        .arg = this,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "character_timer",
+        .skip_unhandled_events = false,
+    };
+    esp_timer_create(&character_timer_args, &character_timer_);
 }
 
 SpiLcdDisplay::SpiLcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,
@@ -301,9 +318,16 @@ LcdDisplay::~LcdDisplay() {
         esp_timer_stop(preview_timer_);
         esp_timer_delete(preview_timer_);
     }
+    if (character_timer_ != nullptr) {
+        esp_timer_stop(character_timer_);
+        esp_timer_delete(character_timer_);
+    }
 
     if (preview_image_ != nullptr) {
         lv_obj_del(preview_image_);
+    }
+    if (character_overlay_ != nullptr) {
+        lv_obj_del(character_overlay_);
     }
     if (chat_message_label_ != nullptr) {
         lv_obj_del(chat_message_label_);
@@ -466,6 +490,28 @@ void LcdDisplay::SetupUI() {
     lv_obj_set_style_text_font(emoji_label_, large_icon_font, 0);
     lv_obj_set_style_text_color(emoji_label_, lvgl_theme->text_color(), 0);
     lv_label_set_text(emoji_label_, FONT_AWESOME_MICROCHIP_AI);
+
+    // Character display overlay (80% of screen, centered, top layer)
+    character_overlay_ = lv_obj_create(screen);
+    lv_obj_set_size(character_overlay_, width_ * 0.8, height_ * 0.8);
+    lv_obj_align(character_overlay_, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_bg_color(character_overlay_, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(character_overlay_, LV_OPA_90, 0);
+    lv_obj_set_style_border_width(character_overlay_, 2, 0);
+    lv_obj_set_style_border_color(character_overlay_, lvgl_theme->border_color(), 0);
+    lv_obj_set_style_radius(character_overlay_, lvgl_theme->spacing(4), 0);
+    lv_obj_set_style_shadow_width(character_overlay_, 20, 0);
+    lv_obj_set_style_shadow_spread(character_overlay_, 5, 0);
+    lv_obj_move_foreground(character_overlay_); // Move to top layer
+
+    character_label_ = lv_label_create(character_overlay_);
+    lv_label_set_text(character_label_, "");
+    lv_obj_set_style_text_font(character_label_, &font_puhui_20_4, 0);  // 使用30号大字体（7404个常用汉字）
+    lv_obj_set_style_text_color(character_label_, lv_color_black(), 0);
+    lv_obj_set_style_text_align(character_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_center(character_label_);
+    
+    lv_obj_add_flag(character_overlay_, LV_OBJ_FLAG_HIDDEN); // Initially hidden
 }
 #if CONFIG_IDF_TARGET_ESP32P4
 #define  MAX_MESSAGES 40
@@ -869,6 +915,28 @@ void LcdDisplay::SetupUI() {
     lv_obj_set_style_text_color(low_battery_label_, lv_color_white(), 0);
     lv_obj_center(low_battery_label_);
     lv_obj_add_flag(low_battery_popup_, LV_OBJ_FLAG_HIDDEN);
+
+    // Character display overlay (80% of screen, centered, top layer)
+    character_overlay_ = lv_obj_create(screen);
+    lv_obj_set_size(character_overlay_, width_ * 0.8, height_ * 0.8);
+    lv_obj_align(character_overlay_, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_bg_color(character_overlay_, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(character_overlay_, LV_OPA_90, 0);
+    lv_obj_set_style_border_width(character_overlay_, 2, 0);
+    lv_obj_set_style_border_color(character_overlay_, lvgl_theme->border_color(), 0);
+    lv_obj_set_style_radius(character_overlay_, lvgl_theme->spacing(4), 0);
+    lv_obj_set_style_shadow_width(character_overlay_, 20, 0);
+    lv_obj_set_style_shadow_spread(character_overlay_, 5, 0);
+    lv_obj_move_foreground(character_overlay_); // Move to top layer
+
+    character_label_ = lv_label_create(character_overlay_);
+    lv_label_set_text(character_label_, "");
+    lv_obj_set_style_text_font(character_label_, &font_puhui_20_4, 0);  // 使用30号大字体（7404个常用汉字）
+    lv_obj_set_style_text_color(character_label_, lv_color_black(), 0);
+    lv_obj_set_style_text_align(character_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_center(character_label_);
+    
+    lv_obj_add_flag(character_overlay_, LV_OBJ_FLAG_HIDDEN); // Initially hidden
 }
 
 void LcdDisplay::SetPreviewImage(std::unique_ptr<LvglImage> image) {
@@ -1118,4 +1186,48 @@ void LcdDisplay::SetTheme(Theme* theme) {
 
     // No errors occurred. Save theme to settings
     Display::SetTheme(lvgl_theme);
+}
+
+void LcdDisplay::ShowCharacter(const std::string& character) {
+    DisplayLockGuard lock(this);
+    if (character_overlay_ == nullptr || character_label_ == nullptr) {
+        ESP_LOGE(TAG, "Character overlay not initialized");
+        return;
+    }
+
+    ESP_LOGI(TAG, "Showing character: %s", character.c_str());
+
+    // Update character text
+    lv_label_set_text(character_label_, character.c_str());
+    
+    // Set label to wrap mode and limit width (considering 2x scale)
+    lv_label_set_long_mode(character_label_, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(character_label_, (width_ * 0.8 - 40) / 2);  // 除以2是因为会放大2倍
+    lv_obj_set_height(character_label_, LV_SIZE_CONTENT);  // 高度自适应内容
+    
+    // Apply 2x scale transform (256 = 1x, so 512 = 2x)
+    lv_obj_set_style_transform_scale(character_label_, 512, 0);
+    
+    // Refresh layout
+    lv_obj_update_layout(character_label_);
+    
+    // Get label's actual dimensions after layout
+    lv_coord_t label_w = lv_obj_get_width(character_label_);
+    lv_coord_t label_h = lv_obj_get_height(character_label_);
+    
+    // Calculate offsets to compensate for 2x scaling
+    // After 2x scale, visual size is doubled, so we shift by half the original size
+    lv_coord_t x_offset = -label_w / 2;  // Shift left by half width
+    lv_coord_t y_offset = -label_h / 2;  // Shift up by half height
+    
+    // Center the label with both horizontal and vertical compensation
+    lv_obj_align(character_label_, LV_ALIGN_CENTER, x_offset, y_offset);
+    
+    // Show overlay
+    lv_obj_remove_flag(character_overlay_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(character_overlay_);
+
+    // Start timer to hide after 10 seconds
+    esp_timer_stop(character_timer_);
+    ESP_ERROR_CHECK(esp_timer_start_once(character_timer_, 10000000)); // 10 seconds in microseconds
 }
