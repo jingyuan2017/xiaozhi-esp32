@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstring>
 #include <esp_pthread.h>
+#include <esp_timer.h>
 
 #include "application.h"
 #include "display.h"
@@ -17,6 +18,7 @@
 #include "settings.h"
 #include "lvgl_theme.h"
 #include "lvgl_display.h"
+#include "esp32_camera.h"
 
 #define TAG "MCP"
 
@@ -24,6 +26,13 @@ McpServer::McpServer() {
 }
 
 McpServer::~McpServer() {
+    // Clean up study photo timer
+    if (study_photo_timer_ != nullptr) {
+        esp_timer_stop(study_photo_timer_);
+        esp_timer_delete(study_photo_timer_);
+        study_photo_timer_ = nullptr;
+    }
+    
     for (auto tool : tools_) {
         delete tool;
     }
@@ -97,13 +106,61 @@ void McpServer::AddCommonTools() {
         PropertyList({
             Property("enable", kPropertyTypeInteger, 0, 1)
         }),
-        [&board](const PropertyList& properties) -> ReturnValue {
+        [this, &board](const PropertyList& properties) -> ReturnValue {
             int enable = properties["enable"].value<int>();
             ESP_LOGI(TAG, "Set study mode: %d", enable);
             auto display = board.GetDisplay();
             if (display != nullptr) {
                 display->SetStudyMode(enable == 1);
             }
+            
+            // 管理学习模式的定时拍照
+            auto camera = board.GetCamera();
+            if (camera != nullptr) {
+                if (enable == 1) {
+                    // 启动学习模式：创建并启动定时器
+                    if (study_photo_timer_ == nullptr) {
+                        esp_timer_create_args_t timer_args = {
+                            .callback = [](void* arg) {
+                                auto& board = Board::GetInstance();
+                                auto camera = board.GetCamera();
+                                if (camera != nullptr) {
+                                    ESP_LOGI(TAG, "Study mode: Taking photo for analysis");
+                                    
+                                    // 拍照
+                                    if (camera->Capture()) {
+                                        // 调用豆包API分析学习状态
+                                        auto esp32_camera = dynamic_cast<Esp32Camera*>(camera);
+                                        if (esp32_camera != nullptr) {
+                                            std::string result = esp32_camera->AnalyzeStudyStatus();
+                                            ESP_LOGI(TAG, "Study status API result: %s", result.c_str());
+                                        }
+                                    } else {
+                                        ESP_LOGE(TAG, "Study mode: Failed to capture photo");
+                                    }
+                                }
+                            },
+                            .arg = nullptr,
+                            .dispatch_method = ESP_TIMER_TASK,
+                            .name = "study_photo_timer",
+                            .skip_unhandled_events = false,
+                        };
+                        esp_timer_create(&timer_args, &study_photo_timer_);
+                    }
+                    
+                    // 启动周期性定时器，每20秒拍照一次
+                    esp_timer_stop(study_photo_timer_);
+                    ESP_ERROR_CHECK(esp_timer_start_periodic(study_photo_timer_, 20 * 1000000)); // 20秒，单位为微秒
+                    ESP_LOGI(TAG, "Study mode: Photo timer started (every 20 seconds)");
+                } else {
+                    // 停止学习模式：停止定时器
+                    if (study_photo_timer_ != nullptr) {
+                        esp_timer_stop(study_photo_timer_);
+                        ESP_LOGI(TAG, "Study mode: Photo timer stopped");
+                    }
+                }
+            }
+            
             return true;
         });
 

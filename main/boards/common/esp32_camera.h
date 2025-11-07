@@ -51,6 +51,7 @@ public:
     virtual bool SetHMirror(bool enabled) override;
     virtual bool SetVFlip(bool enabled) override;
     virtual std::string Explain(const std::string& question);
+    std::string AnalyzeStudyStatus();
 };
 
 #endif // ndef CONFIG_IDF_TARGET_ESP32

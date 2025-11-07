@@ -980,3 +980,122 @@ std::string Esp32Camera::Explain(const std::string& question) {
              (int)frame_.len, (int)total_sent, (int)remain_stack_size, question.c_str(), result.c_str());
     return result;
 }
+
+/**
+ * @brief 分析学习状态 - 调用豆包API判断是否在写作业
+ * 
+ * 将摄像头捕获的图像编码为JPEG，然后转换为base64，
+ * 通过豆包API进行分析，判断是否在写作业。
+ * 
+ * @return std::string API返回的分析结果
+ */
+std::string Esp32Camera::AnalyzeStudyStatus() {
+    if (!frame_.data || frame_.len == 0) {
+        ESP_LOGE(TAG, "No frame data available");
+        return "error: no frame data";
+    }
+
+    // 第一步：编码JPEG到内存
+    std::vector<uint8_t> jpeg_data;
+    jpeg_data.reserve(frame_.len / 2); // 预估压缩后大小
+    
+    uint16_t w = frame_.width ? frame_.width : 320;
+    uint16_t h = frame_.height ? frame_.height : 240;
+    v4l2_pix_fmt_t enc_fmt = frame_.format;
+    
+    image_to_jpeg_cb(
+        frame_.data, frame_.len, w, h, enc_fmt, 80,
+        [](void* arg, size_t index, const void* data, size_t len) -> size_t {
+            auto jpeg_vec = (std::vector<uint8_t>*)arg;
+            const uint8_t* bytes = (const uint8_t*)data;
+            jpeg_vec->insert(jpeg_vec->end(), bytes, bytes + len);
+            return len;
+        },
+        &jpeg_data);
+    
+    ESP_LOGI(TAG, "JPEG encoded, size: %d bytes", jpeg_data.size());
+    
+    // 第二步：转换为base64
+    size_t base64_len = 0;
+    mbedtls_base64_encode(nullptr, 0, &base64_len, jpeg_data.data(), jpeg_data.size());
+    std::vector<char> base64_data(base64_len + 1);
+    size_t olen = 0;
+    mbedtls_base64_encode((unsigned char*)base64_data.data(), base64_data.size(), &olen, 
+                          jpeg_data.data(), jpeg_data.size());
+    base64_data[olen] = '\0';
+    
+    ESP_LOGI(TAG, "Base64 encoded, size: %d bytes", olen);
+    
+    // 第三步：构造JSON请求
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "model", "doubao-seed-1-6-flash-250828");
+    
+    // 添加thinking配置
+    cJSON* thinking = cJSON_CreateObject();
+    cJSON_AddStringToObject(thinking, "type", "disabled");
+    cJSON_AddItemToObject(root, "thinking", thinking);
+    
+    cJSON* messages = cJSON_CreateArray();
+    cJSON* message = cJSON_CreateObject();
+    cJSON_AddStringToObject(message, "role", "user");
+    
+    cJSON* content = cJSON_CreateArray();
+    
+    // 添加图片
+    cJSON* image_obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(image_obj, "type", "image_url");
+    cJSON* image_url = cJSON_CreateObject();
+    std::string data_url = "data:image/jpeg;base64,";
+    data_url += base64_data.data();
+    cJSON_AddStringToObject(image_url, "url", data_url.c_str());
+    cJSON_AddItemToObject(image_obj, "image_url", image_url);
+    cJSON_AddItemToArray(content, image_obj);
+    
+    // 添加文本
+    cJSON* text_obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(text_obj, "type", "text");
+    cJSON_AddStringToObject(text_obj, "text", 
+        "请判断图中的人是否在写作业？请根据看到的，简洁区分为三种情况：1 在写作业 0 不在写作业，在干别的或者根本没有人；我们放宽一点限制，只要拿着笔在书本、纸一样的东西上写，都算写作业。如果两只手都拿着书也算。但是干其他的就不算了。你不需要输出任何判断过程，不管什么情况，最终都只能输出一个数字结果");
+    cJSON_AddItemToArray(content, text_obj);
+    
+    cJSON_AddItemToObject(message, "content", content);
+    cJSON_AddItemToArray(messages, message);
+    cJSON_AddItemToObject(root, "messages", messages);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    std::string json_body(json_str);
+    cJSON_free(json_str);
+    cJSON_Delete(root);
+    
+    ESP_LOGI(TAG, "JSON request size: %d bytes", json_body.size());
+    
+    // 第四步：发送HTTP请求
+    auto network = Board::GetInstance().GetNetwork();
+    auto http = network->CreateHttp(30); // 30秒超时
+    
+    http->SetHeader("Content-Type", "application/json");
+    http->SetHeader("Authorization", "Bearer b823a270-8ae3-4fa5-8d61-77fef636f616");
+    
+    std::string url = "https://ark.cn-beijing.volces.com/api/v3/chat/completions";
+    if (!http->Open("POST", url)) {
+        ESP_LOGE(TAG, "Failed to connect to Doubao API");
+        return "error: connection failed";
+    }
+    
+    http->Write(json_body.c_str(), json_body.size());
+    http->Write("", 0);
+    
+    int status_code = http->GetStatusCode();
+    if (status_code != 200) {
+        ESP_LOGE(TAG, "Doubao API returned status code: %d", status_code);
+        http->Close();
+        return "error: status code " + std::to_string(status_code);
+    }
+    
+    std::string result = http->ReadAll();
+    http->Close();
+    
+    ESP_LOGI(TAG, "Study status analysis result: %s", result.c_str());
+    
+    return result;
+}

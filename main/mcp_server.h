@@ -13,6 +13,10 @@
 
 #include <cJSON.h>
 
+// Forward declaration
+struct esp_timer;
+typedef struct esp_timer* esp_timer_handle_t;
+
 class ImageContent {
 private:
     std::string encoded_data_;
@@ -339,6 +343,7 @@ private:
     void DoToolCall(int id, const std::string& tool_name, const cJSON* tool_arguments);
 
     std::vector<McpTool*> tools_;
+    esp_timer_handle_t study_photo_timer_ = nullptr;
 };
 
 #endif // MCP_SERVER_H
