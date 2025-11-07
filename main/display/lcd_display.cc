@@ -3,6 +3,8 @@
 #include "settings.h"
 #include "lvgl_theme.h"
 #include "assets/lang_config.h"
+#include "application.h"
+#include "device_state.h"
 
 #include <vector>
 #include <algorithm>
@@ -105,6 +107,59 @@ LcdDisplay::LcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_
         .skip_unhandled_events = false,
     };
     esp_timer_create(&character_timer_args, &character_timer_);
+
+    // Create a timer to disconnect audio channel when study mode starts
+    esp_timer_create_args_t study_disconnect_timer_args = {
+        .callback = [](void* arg) {
+            ESP_LOGI(TAG, "Study mode: Disconnecting audio channel after 6 seconds");
+            auto& app = Application::GetInstance();
+            // Use Schedule to ensure we're on the main thread
+            app.Schedule([]() {
+                auto& app = Application::GetInstance();
+                auto state = app.GetDeviceState();
+                
+                ESP_LOGI(TAG, "Study mode: Current state is %d, forcing disconnect", state);
+                
+                // Handle different states appropriately
+                if (state == kDeviceStateSpeaking) {
+                    // Abort speaking first
+                    app.AbortSpeaking(kAbortReasonNone);
+
+                    //延迟1秒
+                    vTaskDelay(pdMS_TO_TICKS(1000));
+
+                    // Then schedule StopListening to execute after state transition
+                    app.Schedule([&app]() {
+                        ESP_LOGI(TAG, "Study mode: Calling StopListening after AbortSpeaking");
+                        app.StopListening();
+                        app.ForceCloseAudioChannel();
+                        
+                        // Clear chat messages
+                        auto display = Board::GetInstance().GetDisplay();
+                        if (display) {
+                            display->SetChatMessage("system", "");
+                        }
+                    });
+                } else if (state == kDeviceStateListening) {
+                    // Stop listening will close the channel
+                    app.StopListening();
+                    app.ForceCloseAudioChannel();
+                    
+                    // Clear chat messages
+                    auto display = Board::GetInstance().GetDisplay();
+                    if (display) {
+                        display->SetChatMessage("system", "");
+                    }
+                }
+                // If already idle or other states, do nothing
+            });
+        },
+        .arg = this,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "study_disconnect_timer",
+        .skip_unhandled_events = false,
+    };
+    esp_timer_create(&study_disconnect_timer_args, &study_disconnect_timer_);
 }
 
 SpiLcdDisplay::SpiLcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,
@@ -324,12 +379,19 @@ LcdDisplay::~LcdDisplay() {
         esp_timer_stop(character_timer_);
         esp_timer_delete(character_timer_);
     }
+    if (study_disconnect_timer_ != nullptr) {
+        esp_timer_stop(study_disconnect_timer_);
+        esp_timer_delete(study_disconnect_timer_);
+    }
 
     if (preview_image_ != nullptr) {
         lv_obj_del(preview_image_);
     }
     if (character_overlay_ != nullptr) {
         lv_obj_del(character_overlay_);
+    }
+    if (study_bar_ != nullptr) {
+        lv_obj_del(study_bar_);
     }
     if (chat_message_label_ != nullptr) {
         lv_obj_del(chat_message_label_);
@@ -514,6 +576,24 @@ void LcdDisplay::SetupUI() {
     lv_obj_center(character_label_);
     
     lv_obj_add_flag(character_overlay_, LV_OBJ_FLAG_HIDDEN); // Initially hidden
+
+    // Study mode bar (bottom of screen)
+    study_bar_ = lv_obj_create(screen);
+    lv_obj_set_size(study_bar_, LV_HOR_RES, text_font->line_height + lvgl_theme->spacing(8));
+    lv_obj_align(study_bar_, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_bg_color(study_bar_, lv_color_hex(0x006400), 0); // 深绿色
+    lv_obj_set_style_bg_opa(study_bar_, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(study_bar_, 0, 0);
+    lv_obj_set_style_pad_all(study_bar_, lvgl_theme->spacing(2), 0);
+    lv_obj_set_style_radius(study_bar_, 0, 0);
+    lv_obj_set_scrollbar_mode(study_bar_, LV_SCROLLBAR_MODE_OFF);
+    
+    study_label_ = lv_label_create(study_bar_);
+    lv_label_set_text(study_label_, "专心学习中...");
+    lv_obj_set_style_text_color(study_label_, lv_color_white(), 0);
+    lv_obj_center(study_label_);
+    
+    lv_obj_add_flag(study_bar_, LV_OBJ_FLAG_HIDDEN); // Initially hidden
 }
 #if CONFIG_IDF_TARGET_ESP32P4
 #define  MAX_MESSAGES 40
@@ -939,6 +1019,24 @@ void LcdDisplay::SetupUI() {
     lv_obj_center(character_label_);
     
     lv_obj_add_flag(character_overlay_, LV_OBJ_FLAG_HIDDEN); // Initially hidden
+
+    // Study mode bar (bottom of screen)
+    study_bar_ = lv_obj_create(screen);
+    lv_obj_set_size(study_bar_, LV_HOR_RES, text_font->line_height + lvgl_theme->spacing(8));
+    lv_obj_align(study_bar_, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_bg_color(study_bar_, lv_color_hex(0x006400), 0); // 深绿色
+    lv_obj_set_style_bg_opa(study_bar_, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(study_bar_, 0, 0);
+    lv_obj_set_style_pad_all(study_bar_, lvgl_theme->spacing(2), 0);
+    lv_obj_set_style_radius(study_bar_, 0, 0);
+    lv_obj_set_scrollbar_mode(study_bar_, LV_SCROLLBAR_MODE_OFF);
+    
+    study_label_ = lv_label_create(study_bar_);
+    lv_label_set_text(study_label_, "专心学习中...");
+    lv_obj_set_style_text_color(study_label_, lv_color_white(), 0);
+    lv_obj_center(study_label_);
+    
+    lv_obj_add_flag(study_bar_, LV_OBJ_FLAG_HIDDEN); // Initially hidden
 }
 
 void LcdDisplay::SetPreviewImage(std::unique_ptr<LvglImage> image) {
@@ -1232,4 +1330,28 @@ void LcdDisplay::ShowCharacter(const std::string& character) {
     // Start timer to hide after 10 seconds
     esp_timer_stop(character_timer_);
     ESP_ERROR_CHECK(esp_timer_start_once(character_timer_, 10000000)); // 10 seconds in microseconds
+}
+
+void LcdDisplay::SetStudyMode(bool enable) {
+    DisplayLockGuard lock(this);
+    if (study_bar_ == nullptr) {
+        ESP_LOGE(TAG, "Study bar not initialized");
+        return;
+    }
+    
+    if (enable) {
+        lv_obj_remove_flag(study_bar_, LV_OBJ_FLAG_HIDDEN);
+        ESP_LOGI(TAG, "Study mode enabled, will disconnect audio channel in 6 seconds");
+        
+        // Stop any existing timer
+        esp_timer_stop(study_disconnect_timer_);
+        // Start 6 second timer to disconnect
+        ESP_ERROR_CHECK(esp_timer_start_once(study_disconnect_timer_, 6000000)); // 6 seconds in microseconds
+    } else {
+        lv_obj_add_flag(study_bar_, LV_OBJ_FLAG_HIDDEN);
+        ESP_LOGI(TAG, "Study mode disabled");
+        
+        // Stop the disconnect timer if it's running
+        esp_timer_stop(study_disconnect_timer_);
+    }
 }

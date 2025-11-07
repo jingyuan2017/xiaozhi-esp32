@@ -345,6 +345,12 @@ void Application::StopListening() {
     });
 }
 
+void Application::ForceCloseAudioChannel() {
+    if (protocol_ && protocol_->IsAudioChannelOpened()) {
+        protocol_->CloseAudioChannel();
+    }
+}
+
 void Application::Start() {
     auto& board = Board::GetInstance();
     SetDeviceState(kDeviceStateStarting);

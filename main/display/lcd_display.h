@@ -37,6 +37,11 @@ protected:
     lv_obj_t* character_overlay_ = nullptr;
     lv_obj_t* character_label_ = nullptr;
     esp_timer_handle_t character_timer_ = nullptr;
+    
+    // Study mode bar
+    lv_obj_t* study_bar_ = nullptr;
+    lv_obj_t* study_label_ = nullptr;
+    esp_timer_handle_t study_disconnect_timer_ = nullptr;
 
     void InitializeLcdThemes();
     void SetupUI();
@@ -53,6 +58,7 @@ public:
     virtual void SetChatMessage(const char* role, const char* content) override; 
     virtual void SetPreviewImage(std::unique_ptr<LvglImage> image) override;
     virtual void ShowCharacter(const std::string& character) override;
+    virtual void SetStudyMode(bool enable);
 
     // Add theme switching function
     virtual void SetTheme(Theme* theme) override;

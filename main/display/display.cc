@@ -49,6 +49,10 @@ void Display::ShowCharacter(const std::string& character) {
     ESP_LOGW(TAG, "ShowCharacter: %s", character.c_str());
 }
 
+void Display::SetStudyMode(bool enable) {
+    ESP_LOGW(TAG, "SetStudyMode: %d", enable);
+}
+
 void Display::SetTheme(Theme* theme) {
     current_theme_ = theme;
     Settings settings("display", true);

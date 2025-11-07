@@ -92,6 +92,21 @@ void McpServer::AddCommonTools() {
             return true;
         });
 
+    AddTool("self.startStudy",
+        "Control study mode display. Call this when user starts or stops studying/homework. Use startStudy(1) when user says they want to start studying or doing homework. Use startStudy(0) when user says they finished homework or stops studying.",
+        PropertyList({
+            Property("enable", kPropertyTypeInteger, 0, 1)
+        }),
+        [&board](const PropertyList& properties) -> ReturnValue {
+            int enable = properties["enable"].value<int>();
+            ESP_LOGI(TAG, "Set study mode: %d", enable);
+            auto display = board.GetDisplay();
+            if (display != nullptr) {
+                display->SetStudyMode(enable == 1);
+            }
+            return true;
+        });
+
 #ifdef HAVE_LVGL
     auto display = board.GetDisplay();
     if (display && display->GetTheme() != nullptr) {
