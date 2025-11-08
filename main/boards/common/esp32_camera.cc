@@ -1055,7 +1055,7 @@ std::string Esp32Camera::AnalyzeStudyStatus() {
     cJSON* text_obj = cJSON_CreateObject();
     cJSON_AddStringToObject(text_obj, "type", "text");
     cJSON_AddStringToObject(text_obj, "text", 
-        "请判断图中的人是否在写作业？请根据看到的，简洁区分为三种情况：1 在写作业 0 不在写作业，在干别的或者根本没有人；我们放宽一点限制，只要拿着笔在书本、纸一样的东西上写，都算写作业。如果两只手都拿着书也算。但是干其他的就不算了。你不需要输出任何判断过程，不管什么情况，最终都只能输出一个数字结果");
+        "请判断图中的人是否在写作业？请根据看到的，简洁区分为三种情况：1 在写作业或学习（只要拿着笔在书本、纸一样的东西上写，都算写作业。手里拿着书在阅读也算。但是手里玩其他东西非文具的东西就不算了。完全没有出现书本也不算） ；0 不在写作业或学习，在干别的或者图片里根本没有人；2不太确定的一些行为；请注意你的输出，按照标准的json格式，result是结果数字，info是简短的描述。{'result':'',info:'xxxxxxxxxxxx'}");
     cJSON_AddItemToArray(content, text_obj);
     
     cJSON_AddItemToObject(message, "content", content);

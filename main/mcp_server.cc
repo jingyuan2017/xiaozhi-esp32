@@ -86,13 +86,16 @@ void McpServer::AddCommonTools() {
             });
     }
 
+    //添加用于显示字词的mcp函数，给AI调用
     AddTool("self.screen.show_character",
-        "Display a character or word on the screen. Use this tool when user asks how to write a specific Chinese character or English word.",
+        "用于在设备屏幕上显示汉字或者英文单词。当用户询问某个字或者词怎么写的时候调用它。",
         PropertyList({
+            //有一个参数，用来传递要显示的字词
             Property("character", kPropertyTypeString)
         }),
         [&board](const PropertyList& properties) -> ReturnValue {
             auto character = properties["character"].value<std::string>();
+            //日志打印一下这个字词
             ESP_LOGI(TAG, "Show character: %s", character.c_str());
             auto display = board.GetDisplay();
             if (display != nullptr) {
@@ -100,10 +103,15 @@ void McpServer::AddCommonTools() {
             }
             return true;
         });
+    
 
+    //添加新的控制学习中状态栏的mcp函数，给AI调用
     AddTool("self.startStudy",
-        "Control study mode display. Call this when user starts or stops studying/homework. Use startStudy(1) when user says they want to start studying or doing homework. Use startStudy(0) when user says they finished homework or stops studying.",
+        "控制学习中状态栏的显示。当用户说开始或停止学习/作业时调用它。
+        当用户说他想开始学习或做作业时调用startStudy(1)。
+        当用户说他们完成作业或停止学习时调用startStudy(0)。",
         PropertyList({
+            //传一个0或者1的状态
             Property("enable", kPropertyTypeInteger, 0, 1)
         }),
         [this, &board](const PropertyList& properties) -> ReturnValue {
@@ -114,29 +122,30 @@ void McpServer::AddCommonTools() {
                 display->SetStudyMode(enable == 1);
             }
             
-            // 管理学习模式的定时拍照
+            // 学习模式下的定时拍照
             auto camera = board.GetCamera();
             if (camera != nullptr) {
                 if (enable == 1) {
-                    // 启动学习模式：创建并启动定时器
+                    
+                    // 启动学习模式：启动定时器每60秒拍照一次
                     if (study_photo_timer_ == nullptr) {
                         esp_timer_create_args_t timer_args = {
                             .callback = [](void* arg) {
                                 auto& board = Board::GetInstance();
                                 auto camera = board.GetCamera();
                                 if (camera != nullptr) {
-                                    ESP_LOGI(TAG, "Study mode: Taking photo for analysis");
+                                    ESP_LOGI(TAG, "学习模式下拍照监测");
                                     
-                                    // 拍照
+                                    // 调用相机拍照拍照
                                     if (camera->Capture()) {
                                         // 调用豆包API分析学习状态
                                         auto esp32_camera = dynamic_cast<Esp32Camera*>(camera);
                                         if (esp32_camera != nullptr) {
                                             std::string result = esp32_camera->AnalyzeStudyStatus();
-                                            ESP_LOGI(TAG, "Study status API result: %s", result.c_str());
+                                            ESP_LOGI(TAG, "API返回结果: %s", result.c_str());
                                         }
                                     } else {
-                                        ESP_LOGE(TAG, "Study mode: Failed to capture photo");
+                                        ESP_LOGE(TAG, "学习模式拍照失败");
                                     }
                                 }
                             },

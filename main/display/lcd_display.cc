@@ -555,7 +555,7 @@ void LcdDisplay::SetupUI() {
     lv_obj_set_style_text_color(emoji_label_, lvgl_theme->text_color(), 0);
     lv_label_set_text(emoji_label_, FONT_AWESOME_MICROCHIP_AI);
 
-    // Character display overlay (80% of screen, centered, top layer)
+    // 查词显示的层，在最上方，设置了尺寸、背景色、透明度等
     character_overlay_ = lv_obj_create(screen);
     lv_obj_set_size(character_overlay_, width_ * 0.8, height_ * 0.8);
     lv_obj_align(character_overlay_, LV_ALIGN_CENTER, 0, 0);
@@ -566,18 +566,21 @@ void LcdDisplay::SetupUI() {
     lv_obj_set_style_radius(character_overlay_, lvgl_theme->spacing(4), 0);
     lv_obj_set_style_shadow_width(character_overlay_, 20, 0);
     lv_obj_set_style_shadow_spread(character_overlay_, 5, 0);
-    lv_obj_move_foreground(character_overlay_); // Move to top layer
+    lv_obj_move_foreground(character_overlay_); //让这个层在最上方，盖住其他东西
 
+    //在层里添加一个文本标签，字符默认设置为空
     character_label_ = lv_label_create(character_overlay_);
     lv_label_set_text(character_label_, "");
-    lv_obj_set_style_text_font(character_label_, &font_puhui_20_4, 0);  // 使用30号大字体（7404个常用汉字）
+    // 阿里的普惠字体，包含了7404个常用汉字
+    lv_obj_set_style_text_font(character_label_, &font_puhui_20_4, 0); 
     lv_obj_set_style_text_color(character_label_, lv_color_black(), 0);
     lv_obj_set_style_text_align(character_label_, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_center(character_label_);
     
-    lv_obj_add_flag(character_overlay_, LV_OBJ_FLAG_HIDDEN); // Initially hidden
+    lv_obj_add_flag(character_overlay_, LV_OBJ_FLAG_HIDDEN); //默认隐藏这个层，被调用时才显示
 
-    // Study mode bar (bottom of screen)
+
+    // 学习模式的提示条，在屏幕底部，设置了尺寸、背景色、透明度等
     study_bar_ = lv_obj_create(screen);
     lv_obj_set_size(study_bar_, LV_HOR_RES, text_font->line_height + lvgl_theme->spacing(8));
     lv_obj_align(study_bar_, LV_ALIGN_BOTTOM_MID, 0, 0);
@@ -1020,8 +1023,9 @@ void LcdDisplay::SetupUI() {
     
     lv_obj_add_flag(character_overlay_, LV_OBJ_FLAG_HIDDEN); // Initially hidden
 
-    // Study mode bar (bottom of screen)
+    // 在页面底部添加一个绿色的状态栏，用于学习中状态的显示
     study_bar_ = lv_obj_create(screen);
+    //设置高度、颜色等，并且靠屏幕底部显示
     lv_obj_set_size(study_bar_, LV_HOR_RES, text_font->line_height + lvgl_theme->spacing(8));
     lv_obj_align(study_bar_, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_obj_set_style_bg_color(study_bar_, lv_color_hex(0x006400), 0); // 深绿色
@@ -1031,12 +1035,13 @@ void LcdDisplay::SetupUI() {
     lv_obj_set_style_radius(study_bar_, 0, 0);
     lv_obj_set_scrollbar_mode(study_bar_, LV_SCROLLBAR_MODE_OFF);
     
+    //添加文本标签，颜色是白色，上边的文字是固定的
     study_label_ = lv_label_create(study_bar_);
     lv_label_set_text(study_label_, "专心学习中...");
     lv_obj_set_style_text_color(study_label_, lv_color_white(), 0);
     lv_obj_center(study_label_);
     
-    lv_obj_add_flag(study_bar_, LV_OBJ_FLAG_HIDDEN); // Initially hidden
+    lv_obj_add_flag(study_bar_, LV_OBJ_FLAG_HIDDEN); // 默认是隐藏的
 }
 
 void LcdDisplay::SetPreviewImage(std::unique_ptr<LvglImage> image) {
@@ -1288,70 +1293,69 @@ void LcdDisplay::SetTheme(Theme* theme) {
     Display::SetTheme(lvgl_theme);
 }
 
+
+// 在弹出层上显示指定的文本
 void LcdDisplay::ShowCharacter(const std::string& character) {
     DisplayLockGuard lock(this);
     if (character_overlay_ == nullptr || character_label_ == nullptr) {
-        ESP_LOGE(TAG, "Character overlay not initialized");
+        ESP_LOGE(TAG, "弹出层还没有初始化");
         return;
     }
 
     ESP_LOGI(TAG, "Showing character: %s", character.c_str());
 
-    // Update character text
+    // 更新弹出层上的文本内容
     lv_label_set_text(character_label_, character.c_str());
     
-    // Set label to wrap mode and limit width (considering 2x scale)
+    // 使用lvgl内置的函数把lable放大两倍显示
     lv_label_set_long_mode(character_label_, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(character_label_, (width_ * 0.8 - 40) / 2);  // 除以2是因为会放大2倍
-    lv_obj_set_height(character_label_, LV_SIZE_CONTENT);  // 高度自适应内容
-    
-    // Apply 2x scale transform (256 = 1x, so 512 = 2x)
+    lv_obj_set_width(character_label_, (width_ * 0.8 - 40) / 2);
+    lv_obj_set_height(character_label_, LV_SIZE_CONTENT);
     lv_obj_set_style_transform_scale(character_label_, 512, 0);
-    
-    // Refresh layout
     lv_obj_update_layout(character_label_);
     
-    // Get label's actual dimensions after layout
+    // 获取label的实际尺寸
     lv_coord_t label_w = lv_obj_get_width(character_label_);
     lv_coord_t label_h = lv_obj_get_height(character_label_);
     
-    // Calculate offsets to compensate for 2x scaling
-    // After 2x scale, visual size is doubled, so we shift by half the original size
-    lv_coord_t x_offset = -label_w / 2;  // Shift left by half width
-    lv_coord_t y_offset = -label_h / 2;  // Shift up by half height
+    // 计算偏移量，补偿2x放大带来的位置偏差
+    lv_coord_t x_offset = -label_w / 2;
+    lv_coord_t y_offset = -label_h / 2;
     
-    // Center the label with both horizontal and vertical compensation
+    // 居中显示
     lv_obj_align(character_label_, LV_ALIGN_CENTER, x_offset, y_offset);
     
-    // Show overlay
+    // 显示弹出层
     lv_obj_remove_flag(character_overlay_, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(character_overlay_);
 
-    // Start timer to hide after 10 seconds
+    // 显示10秒以后关闭
     esp_timer_stop(character_timer_);
     ESP_ERROR_CHECK(esp_timer_start_once(character_timer_, 10000000)); // 10 seconds in microseconds
 }
 
+
+//控制是否显示学习中状态
 void LcdDisplay::SetStudyMode(bool enable) {
     DisplayLockGuard lock(this);
     if (study_bar_ == nullptr) {
-        ESP_LOGE(TAG, "Study bar not initialized");
+        ESP_LOGE(TAG, "学习中横条还没有初始化");
         return;
     }
     
     if (enable) {
         lv_obj_remove_flag(study_bar_, LV_OBJ_FLAG_HIDDEN);
-        ESP_LOGI(TAG, "Study mode enabled, will disconnect audio channel in 6 seconds");
+        ESP_LOGI(TAG, "学习中状态开启，6秒后断开音频通道");
         
-        // Stop any existing timer
+        // 停止任何现有的定时器
         esp_timer_stop(study_disconnect_timer_);
-        // Start 6 second timer to disconnect
+        // 启动6秒的定时器，用于断开音频通道
         ESP_ERROR_CHECK(esp_timer_start_once(study_disconnect_timer_, 6000000)); // 6 seconds in microseconds
     } else {
         lv_obj_add_flag(study_bar_, LV_OBJ_FLAG_HIDDEN);
-        ESP_LOGI(TAG, "Study mode disabled");
+        ESP_LOGI(TAG, "学习中状态关闭");
         
-        // Stop the disconnect timer if it's running
+        // 停止断开音频通道的定时器
         esp_timer_stop(study_disconnect_timer_);
     }
 }
