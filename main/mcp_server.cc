@@ -107,9 +107,7 @@ void McpServer::AddCommonTools() {
 
     //添加新的控制学习中状态栏的mcp函数，给AI调用
     AddTool("self.startStudy",
-        "控制学习中状态栏的显示。当用户说开始或停止学习/作业时调用它。
-        当用户说他想开始学习或做作业时调用startStudy(1)。
-        当用户说他们完成作业或停止学习时调用startStudy(0)。",
+        "控制学习中状态栏的显示。当用户说开始或停止学习/作业时调用它。当用户说他想开始学习或做作业时调用startStudy(1)；当用户说他们完成作业或停止学习时调用startStudy(0)。",
         PropertyList({
             //传一个0或者1的状态
             Property("enable", kPropertyTypeInteger, 0, 1)
@@ -143,6 +141,45 @@ void McpServer::AddCommonTools() {
                                         if (esp32_camera != nullptr) {
                                             std::string result = esp32_camera->AnalyzeStudyStatus();
                                             ESP_LOGI(TAG, "API返回结果: %s", result.c_str());
+                                            
+                                            // 解析API返回的JSON
+                                            cJSON* root = cJSON_Parse(result.c_str());
+                                            if (root != nullptr) {
+                                                cJSON* choices = cJSON_GetObjectItem(root, "choices");
+                                                if (cJSON_IsArray(choices) && cJSON_GetArraySize(choices) > 0) {
+                                                    cJSON* first_choice = cJSON_GetArrayItem(choices, 0);
+                                                    cJSON* message = cJSON_GetObjectItem(first_choice, "message");
+                                                    if (cJSON_IsObject(message)) {
+                                                        cJSON* content = cJSON_GetObjectItem(message, "content");
+                                                        if (cJSON_IsString(content)) {
+                                                            // 解析content中的JSON
+                                                            cJSON* content_json = cJSON_Parse(content->valuestring);
+                                                            if (content_json != nullptr) {
+                                                                cJSON* result_field = cJSON_GetObjectItem(content_json, "result");
+                                                                cJSON* info_field = cJSON_GetObjectItem(content_json, "info");
+                                                                
+                                                                if (cJSON_IsString(result_field) && (strcmp(result_field->valuestring, "0") == 0 || strcmp(result_field->valuestring, "0") == 2)) {
+                                                                    // result等于0，说明没有在学习
+                                                                    std::string info = cJSON_IsString(info_field) ? info_field->valuestring : "没有在学习";
+                                                                    ESP_LOGW(TAG, "学生没有在学习, info: * %s *", info.c_str());
+                                                                    
+                                                                    // 构造消息文本
+                                                                    //std::string text_message = "刚刚摄像头判断学生没有在学习，请你简短的鼓励并提醒他继续完成作业，摄像头识别的内容是：";
+                                                                    //text_message += info;
+
+                                                                    std::string text_message = "*" + info + "*";
+                                                                    
+                                                                    // 发送文本消息给后端
+                                                                    auto& app = Application::GetInstance();
+                                                                    app.SendTextMessage(text_message);
+                                                                }
+                                                                cJSON_Delete(content_json);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                cJSON_Delete(root);
+                                            }
                                         }
                                     } else {
                                         ESP_LOGE(TAG, "学习模式拍照失败");

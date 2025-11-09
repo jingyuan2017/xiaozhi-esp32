@@ -64,6 +64,7 @@ public:
     AecMode GetAecMode() const { return aec_mode_; }
     void PlaySound(const std::string_view& sound);
     AudioService& GetAudioService() { return audio_service_; }
+    void SendTextMessage(const std::string& text);
 
 private:
     Application();

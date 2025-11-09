@@ -1345,17 +1345,17 @@ void LcdDisplay::SetStudyMode(bool enable) {
     
     if (enable) {
         lv_obj_remove_flag(study_bar_, LV_OBJ_FLAG_HIDDEN);
-        ESP_LOGI(TAG, "学习中状态开启，6秒后断开音频通道");
-        
+        //ESP_LOGI(TAG, "学习中状态开启，6秒后断开音频通道");
+        ESP_LOGI(TAG, "学习中状态开启，音频通道不变");
         // 停止任何现有的定时器
-        esp_timer_stop(study_disconnect_timer_);
-        // 启动6秒的定时器，用于断开音频通道
-        ESP_ERROR_CHECK(esp_timer_start_once(study_disconnect_timer_, 6000000)); // 6 seconds in microseconds
+        //esp_timer_stop(study_disconnect_timer_);
+        // 启动6秒的定时器，用于断开音频通道（为了拍视频先停用了，不然AI自动唤醒不了，以后再说）
+        //ESP_ERROR_CHECK(esp_timer_start_once(study_disconnect_timer_, 6000000)); // 6 seconds in microseconds
     } else {
         lv_obj_add_flag(study_bar_, LV_OBJ_FLAG_HIDDEN);
         ESP_LOGI(TAG, "学习中状态关闭");
         
         // 停止断开音频通道的定时器
-        esp_timer_stop(study_disconnect_timer_);
+        //esp_timer_stop(study_disconnect_timer_);
     }
 }

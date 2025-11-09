@@ -898,3 +898,15 @@ void Application::SetAecMode(AecMode mode) {
 void Application::PlaySound(const std::string_view& sound) {
     audio_service_.PlaySound(sound);
 }
+
+void Application::SendTextMessage(const std::string& text) {
+    if (!protocol_) {
+        ESP_LOGE(TAG, "Protocol not initialized");
+        return;
+    }
+    
+    Schedule([this, text]() {
+        // 发送文本消息（使用 listen/stop+text 格式，后端会作为STT结果处理）
+        protocol_->SendTextInput(text);
+    });
+}

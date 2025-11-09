@@ -78,6 +78,12 @@ void Protocol::SendMcpMessage(const std::string& payload) {
     SendText(message);
 }
 
+void Protocol::SendTextInput(const std::string& text) {
+    // 使用 listen/detect+text 格式，与语音唤醒相同，后端会将text作为唤醒触发
+    std::string message = "{\"session_id\":\"" + session_id_ + "\",\"type\":\"listen\",\"state\":\"detect\",\"text\":\"" + text + "\"}";
+    SendText(message);
+}
+
 bool Protocol::IsTimeout() const {
     const int kTimeoutSeconds = 120;
     auto now = std::chrono::steady_clock::now();
